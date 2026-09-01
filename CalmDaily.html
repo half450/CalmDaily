@@ -191,6 +191,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      cursor: pointer;
     }
 
     /* ── 瀑布流 ── */
@@ -287,6 +288,8 @@
             playsinline
             webkit-playsinline
             x5-playsinline
+            x5-video-player-type="h5"
+            preload="auto"
           ></video>
           <img class="live-overlay" src="assets/zhezhao-zhibo.png" alt="" />
           <button class="mute-btn" id="muteBtn" type="button" aria-label="切换静音">
@@ -330,13 +333,21 @@
       { img: "assets/kexuejianzhong.png", alt: "科学减重", jump: null }
     ];
 
-    /** 直播配置：enabled 为 false 时不显示直播区块 */
+    /**
+     * 直播配置：对应 https://wap.cyol.com/liveDetail/{contId}
+     * enabled 为 false 时不显示直播区块
+     */
     var LIVE_CONFIG = {
-      enabled: false,
-      streamUrl: "",
-      title: "",
-      poster: ""
+      enabled: true,
+      contId: "1457951",
+      forwardType: "8",
+      streamUrl: "https://css.cyol.com/zqh/1457951.m3u8",
+      title: "“青年舒压艺术空间”慢直播",
+      poster: "https://prod-cyolcos-1409912444.cos.ap-beijing.myqcloud.com/image/20260901/1788223866684.JPEG?imageMogr2/thumbnail/1000x/ignore-error/1"
     };
+
+    var LIVE_DETAIL_API = "https://api.cyol.com/app/liveNews/liveNewsDetails";
+    var HLS_JS_SRC = "https://cdn.bootcdn.net/ajax/libs/hls.js/1.5.17/hls.min.js";
 
     /** 专栏接口地址，接入后替换 fetchArticles 内部实现 */
     var ARTICLE_API = "";
@@ -382,10 +393,55 @@
       });
     }
 
-    /* ── 直播模块 ── */
+    /* ── 直播模块（HLS：iOS 原生 / 其他端 hls.js） ── */
 
-    function initLive() {
-      if (!LIVE_CONFIG.enabled || !LIVE_CONFIG.streamUrl) return;
+    function loadHlsScript() {
+      return new Promise(function (resolve, reject) {
+        if (window.Hls) {
+          resolve();
+          return;
+        }
+        var script = document.createElement("script");
+        script.src = HLS_JS_SRC;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    function playHls(video, url) {
+      var canNative =
+        video.canPlayType("application/vnd.apple.mpegurl") ||
+        video.canPlayType("application/x-mpegURL");
+
+      if (canNative) {
+        video.src = url;
+        video.play().catch(function () {});
+        return;
+      }
+
+      loadHlsScript()
+        .then(function () {
+          if (!window.Hls || !Hls.isSupported()) {
+            video.src = url;
+            video.play().catch(function () {});
+            return;
+          }
+          var hls = new Hls({ enableWorker: true, liveSyncDurationCount: 3 });
+          hls.loadSource(url);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            video.play().catch(function () {});
+          });
+        })
+        .catch(function () {
+          video.src = url;
+          video.play().catch(function () {});
+        });
+    }
+
+    function showLivePlayer(cfg) {
+      if (!cfg.streamUrl) return;
 
       var section = document.getElementById("liveSection");
       var video = document.getElementById("liveVideo");
@@ -395,20 +451,75 @@
       var iconUnmuted = document.getElementById("iconUnmuted");
 
       section.classList.add("is-visible");
-      titleEl.textContent = LIVE_CONFIG.title || "正在直播";
-      video.src = LIVE_CONFIG.streamUrl;
-      if (LIVE_CONFIG.poster) video.poster = LIVE_CONFIG.poster;
+      titleEl.textContent = cfg.title || "正在直播";
+      if (cfg.poster) video.poster = cfg.poster;
+
       video.muted = true;
       video.autoplay = true;
       video.playsInline = true;
       video.setAttribute("playsinline", "");
-      video.play().catch(function () {});
+      video.setAttribute("webkit-playsinline", "");
+      video.setAttribute("x5-playsinline", "");
 
-      muteBtn.addEventListener("click", function () {
+      playHls(video, cfg.streamUrl);
+
+      muteBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
         video.muted = !video.muted;
         iconMuted.style.display = video.muted ? "" : "none";
         iconUnmuted.style.display = video.muted ? "none" : "";
       });
+
+      titleEl.addEventListener("click", function () {
+        jump({
+          forwardType: LIVE_CONFIG.forwardType,
+          contId: LIVE_CONFIG.contId
+        });
+      });
+    }
+
+    function fetchLiveDetail() {
+      return fetch(LIVE_DETAIL_API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "cyol-client-type": "02",
+          "cyol-token": (window.localStorage && localStorage.getItem("cyol-token")) || "Ecmmu18epJdP89fIlvX"
+        },
+        body: JSON.stringify({ contId: Number(LIVE_CONFIG.contId) })
+      }).then(function (res) {
+        return res.json();
+      });
+    }
+
+    function initLive() {
+      if (!LIVE_CONFIG.enabled) return;
+
+      fetchLiveDetail()
+        .then(function (json) {
+          var data = json && json.data;
+          if (!json || json.code !== 200 || !data) {
+            showLivePlayer(LIVE_CONFIG);
+            return;
+          }
+
+          var liveInfo = data.liveInfo || {};
+          var streamUrl = liveInfo.liveM3u8Url || liveInfo.liveUrl || "";
+          var liveType = Number(liveInfo.liveType);
+          var isOnAir = !!streamUrl && (liveType === 3 || liveType === 6) && !data.isExpire;
+
+          if (!isOnAir) return;
+
+          showLivePlayer({
+            streamUrl: streamUrl,
+            title: data.name || data.title || LIVE_CONFIG.title,
+            poster: liveInfo.livePreviewImgUrl || data.coverPic || LIVE_CONFIG.poster
+          });
+        })
+        .catch(function () {
+          showLivePlayer(LIVE_CONFIG);
+        });
     }
 
     /* ── 专栏瀑布流 ── */
