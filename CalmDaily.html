@@ -180,22 +180,14 @@
       object-fit: contain;
     }
 
-    .live-badge img:nth-child(1) {
-      animation: live-blink-a 1s step-start infinite;
-    }
-
     .live-badge img:nth-child(2) {
-      animation: live-blink-b 1s step-start infinite;
+      opacity: 0;
+      animation: live-blink 2.8s ease-in-out infinite;
     }
 
-    @keyframes live-blink-a {
-      0%, 49% { opacity: 1; }
-      50%, 100% { opacity: 0; }
-    }
-
-    @keyframes live-blink-b {
-      0%, 49% { opacity: 0; }
-      50%, 100% { opacity: 1; }
+    @keyframes live-blink {
+      0%, 100% { opacity: 0; }
+      50% { opacity: 1; }
     }
 
     .live-title {
@@ -300,6 +292,32 @@
       color: #aaa;
     }
 
+    .load-status.is-end {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 0 8px;
+      color: transparent;
+      font-size: 0;
+    }
+
+    .load-status.is-end::before,
+    .load-status.is-end::after {
+      content: "";
+      width: 52px;
+      height: 1px;
+      background: #dcdcdc;
+    }
+
+    .load-status.is-end .end-dot {
+      width: 4px;
+      height: 4px;
+      margin: 0 10px;
+      background: #dcdcdc;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
     .load-status.hidden { display: none; }
   </style>
 </head>
@@ -368,7 +386,7 @@
     var NAV_BUTTONS = [
       { img: "assets/gaishanshimian.png",  alt: "改善睡眠", jump: { forwardType: "54", contId: "5" } },
       { img: "assets/yundongjianshen.png", alt: "运动健身", jump: { forwardType: "9", contId: "168540" } },
-      { img: "assets/zhuanjiakecheng.png", alt: "专家课程", jump: null },
+      { img: "assets/zhuanjiakecheng.png", alt: "专家课程", jump: { forwardType: "6", link: "https://news.youth.cn/zt/wrxlzzcz/" } },
       { img: "assets/shuyazixun.png",     alt: "舒压咨询", jump: null },
       { img: "assets/yishengkepu.png",    alt: "医生科普", jump: null },
       { img: "assets/xueyezhichang.png",  alt: "学业职场", jump: null },
@@ -773,6 +791,8 @@
       if (wfState.loading || !wfState.hasMore) return;
       wfState.loading = true;
       var statusEl = document.getElementById("loadStatus");
+      statusEl.classList.remove("is-end");
+      statusEl.innerHTML = "";
       statusEl.textContent = "加载中…";
       statusEl.classList.remove("hidden");
 
@@ -786,13 +806,19 @@
         wfState.loading = false;
 
         if (wfState.hasMore) {
+          statusEl.classList.remove("is-end");
+          statusEl.innerHTML = "";
+          statusEl.textContent = "加载中…";
           statusEl.classList.add("hidden");
         } else {
-          statusEl.textContent = "没有更多了";
+          statusEl.classList.add("is-end");
+          statusEl.innerHTML = '<span class="end-dot" aria-hidden="true"></span>';
           statusEl.classList.remove("hidden");
         }
       }).catch(function () {
         wfState.loading = false;
+        statusEl.classList.remove("is-end");
+        statusEl.innerHTML = "";
         statusEl.textContent = "加载失败，请稍后重试";
         statusEl.classList.remove("hidden");
       });
