@@ -215,6 +215,12 @@
       border-radius: 10px;
       overflow: hidden;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      cursor: pointer;
+    }
+
+    .wf-card-media {
+      position: relative;
+      background: #e8e7e5;
     }
 
     .wf-card-cover {
@@ -223,6 +229,28 @@
       aspect-ratio: 4 / 3;
       object-fit: cover;
       background: #e8e7e5;
+    }
+
+    .wf-play {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 36px;
+      height: 36px;
+      margin: -18px 0 0 -18px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+
+    .wf-play::after {
+      content: "";
+      position: absolute;
+      left: 14px;
+      top: 11px;
+      border-style: solid;
+      border-width: 7px 0 7px 12px;
+      border-color: transparent transparent transparent #fff;
     }
 
     .wf-card-body { padding: 10px 10px 12px; }
@@ -349,10 +377,18 @@
     var LIVE_DETAIL_API = "https://api.cyol.com/app/liveNews/liveNewsDetails";
     var HLS_JS_SRC = "https://cdn.bootcdn.net/ajax/libs/hls.js/1.5.17/hls.min.js";
 
-    /** 专栏接口地址，接入后替换 fetchArticles 内部实现 */
-    var ARTICLE_API = "";
+    /**
+     * 专题瀑布流：拉取多个专题的稿件合并展示
+     * 优先走免鉴权开放接口，失败则回退到上游 specialNews/details
+     */
+    var SPECIAL_CONFIG = {
+      contIds: ["168540", "265762", "265746"],
+      api: "https://api-pre.cyol.com/app5/open/api/content/special-news-details",
+      fallbackApi: "https://api-pre.cyol.com/specialNews/details"
+    };
 
     var PAGE_SIZE = 10;
+    var GUEST_TOKEN = "Ecmmu18epJdP89fIlvX";
 
     /* ── App 跳转桥（与 index.html 一致） ── */
 
@@ -478,19 +514,23 @@
       });
     }
 
-    function fetchLiveDetail() {
-      return fetch(LIVE_DETAIL_API, {
+    function cyolPost(url, body) {
+      return fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
           "cyol-client-type": "02",
-          "cyol-token": (window.localStorage && localStorage.getItem("cyol-token")) || "Ecmmu18epJdP89fIlvX"
+          "cyol-token": (window.localStorage && localStorage.getItem("cyol-token")) || GUEST_TOKEN
         },
-        body: JSON.stringify({ contId: Number(LIVE_CONFIG.contId) })
+        body: JSON.stringify(body)
       }).then(function (res) {
         return res.json();
       });
+    }
+
+    function fetchLiveDetail() {
+      return cyolPost(LIVE_DETAIL_API, { contId: Number(LIVE_CONFIG.contId) });
     }
 
     function initLive() {
@@ -525,40 +565,118 @@
     /* ── 专栏瀑布流 ── */
 
     var wfState = { page: 1, loading: false, hasMore: true };
+    var wfCache = null;
+
+    function unwrapSpecialResponse(json) {
+      if (typeof json === "string") {
+        try { json = JSON.parse(json); } catch (e) { return null; }
+      }
+      if (!json || typeof json !== "object") return null;
+      if (json.data) return json.data;
+      if (json.specialChildList) return json;
+      return null;
+    }
+
+    function normalizeArticle(item) {
+      var share = item.shareInfo || {};
+      var video = item.video || {};
+      var live = item.liveInfo || {};
+      var ft = String(item.forwardType || "4");
+      var cover =
+        item.pic ||
+        item.coverPic ||
+        share.coverPic ||
+        share.sharePic ||
+        video.coverUrl ||
+        live.livePreviewImgUrl ||
+        "";
+      var videoUrl = video.url || video.playUrl || video.videoUrl || "";
+      var isVideo =
+        ft === "5" ||
+        Number(item.contType) === 5 ||
+        item.trackArticleType === "视频" ||
+        !!videoUrl;
+
+      return {
+        id: item.contId,
+        title: item.name || item.title || share.title || "",
+        cover: cover,
+        videoUrl: videoUrl,
+        isVideo: isVideo,
+        publishTime: item.pubTime || "",
+        jump: { forwardType: ft, contId: String(item.contId || "") }
+      };
+    }
+
+    function flattenSpecialArticles(data) {
+      var list = [];
+      var children = (data && data.specialChildList) || [];
+      children.forEach(function (child) {
+        var items = (child.pageInfo && child.pageInfo.list) || [];
+        items.forEach(function (item) {
+          list.push(normalizeArticle(item));
+        });
+      });
+      return list;
+    }
+
+    function fetchSpecialNews(contId) {
+      var body = { contId: Number(contId) };
+      return cyolPost(SPECIAL_CONFIG.api, body)
+        .then(function (json) {
+          var data = unwrapSpecialResponse(json);
+          if (data && (data.specialChildList || json.code === 200)) return data;
+          return cyolPost(SPECIAL_CONFIG.fallbackApi, body).then(unwrapSpecialResponse);
+        })
+        .catch(function () {
+          return cyolPost(SPECIAL_CONFIG.fallbackApi, body).then(unwrapSpecialResponse);
+        });
+    }
+
+    function mergeSpecialArticles(dataList) {
+      var seen = {};
+      var list = [];
+      dataList.forEach(function (data) {
+        flattenSpecialArticles(data).forEach(function (item) {
+          var key = String(item.id || "");
+          if (!key || seen[key]) return;
+          seen[key] = true;
+          list.push(item);
+        });
+      });
+      return list;
+    }
 
     /**
-     * 抓取专栏稿件（框架占位，接入 API 后替换内部逻辑）
+     * 抓取专题稿件，做成瀑布流分页
      * @returns {Promise<{ list: Array, hasMore: boolean }>}
      */
     function fetchArticles(page, pageSize) {
-      if (ARTICLE_API) {
-        return fetch(ARTICLE_API + "?page=" + page + "&pageSize=" + pageSize)
-          .then(function (res) { return res.json(); })
-          .then(function (data) {
-            return {
-              list: data.list || data.data || [],
-              hasMore: data.hasMore !== undefined ? data.hasMore : (data.list || data.data || []).length >= pageSize
-            };
-          });
+      var slicePage = function (all) {
+        var start = (page - 1) * pageSize;
+        var list = all.slice(start, start + pageSize);
+        return { list: list, hasMore: start + list.length < all.length };
+      };
+
+      if (wfCache) {
+        return Promise.resolve(slicePage(wfCache));
       }
 
-      /* 模拟数据，接入接口后删除 */
-      return new Promise(function (resolve) {
-        setTimeout(function () {
-          var base = (page - 1) * pageSize;
-          var list = [];
-          for (var i = 0; i < pageSize; i++) {
-            var idx = base + i + 1;
-            list.push({
-              id: idx,
-              title: "专栏稿件标题示例 " + idx + " — 这是一段用于预览瀑布流布局的文字",
-              cover: "",
-              publishTime: "2026-08-" + String(Math.max(1, 31 - idx % 30)).padStart(2, "0") + " 10:00"
-            });
-          }
-          resolve({ list: list, hasMore: page < 5 });
-        }, 400);
+      return Promise.all(
+        SPECIAL_CONFIG.contIds.map(function (id) {
+          return fetchSpecialNews(id).catch(function () { return null; });
+        })
+      ).then(function (dataList) {
+        wfCache = mergeSpecialArticles(dataList);
+        return slicePage(wfCache);
       });
+    }
+
+    function escapeAttr(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;");
     }
 
     function createCard(item) {
@@ -566,17 +684,28 @@
       card.className = "wf-card";
       card.dataset.id = item.id;
 
-      var coverSrc = item.cover || "";
-      var coverHtml = coverSrc
-        ? '<img class="wf-card-cover" src="' + coverSrc + '" alt="" loading="lazy" />'
-        : '<div class="wf-card-cover"></div>';
+      var mediaHtml;
+      if (item.videoUrl) {
+        mediaHtml =
+          '<div class="wf-card-media">' +
+            '<video class="wf-card-cover" src="' + escapeAttr(item.videoUrl) + '" poster="' + escapeAttr(item.cover) + '" muted playsinline preload="metadata" referrerpolicy="no-referrer"></video>' +
+            '<span class="wf-play" aria-hidden="true"></span>' +
+          "</div>";
+      } else if (item.cover) {
+        mediaHtml =
+          '<div class="wf-card-media">' +
+            '<img class="wf-card-cover" src="' + escapeAttr(item.cover) + '" alt="" loading="lazy" referrerpolicy="no-referrer" />' +
+            (item.isVideo ? '<span class="wf-play" aria-hidden="true"></span>' : "") +
+          "</div>";
+      } else {
+        mediaHtml = '<div class="wf-card-cover"></div>';
+      }
 
       card.innerHTML =
-        coverHtml +
+        mediaHtml +
         '<div class="wf-card-body">' +
-          '<p class="wf-card-title">' + escapeHtml(item.title) + '</p>' +
-          '<p class="wf-card-time">' + escapeHtml(item.publishTime || "") + '</p>' +
-        '</div>';
+          '<p class="wf-card-title">' + escapeHtml(item.title) + "</p>" +
+        "</div>";
 
       card.addEventListener("click", function () {
         if (item.jump) jump(item.jump);
