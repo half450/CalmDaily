@@ -227,14 +227,6 @@
     .live-enter:active { opacity: 0.7; }
 
     /* ── 瀑布流 ── */
-    .waterfall-header {
-      font-size: 17px;
-      font-weight: 600;
-      color: #222;
-      margin-bottom: 14px;
-      padding-left: 2px;
-    }
-
     .waterfall {
       column-count: 2;
       column-gap: 10px;
@@ -258,9 +250,16 @@
     .wf-card-cover {
       width: 100%;
       display: block;
-      aspect-ratio: 4 / 3;
-      object-fit: cover;
       background: #e8e7e5;
+    }
+
+    img.wf-card-cover,
+    video.wf-card-cover {
+      height: auto;
+    }
+
+    div.wf-card-cover {
+      aspect-ratio: 4 / 3;
     }
 
     .wf-play {
@@ -400,7 +399,6 @@
       </section>
 
       <!-- 瀑布流 -->
-      <h2 class="waterfall-header">精选专栏</h2>
       <div class="waterfall" id="waterfall"></div>
       <div class="load-sentinel" id="loadSentinel"></div>
       <p class="load-status" id="loadStatus">加载中…</p>
