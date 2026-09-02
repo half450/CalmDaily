@@ -47,6 +47,24 @@
       height: auto;
     }
 
+    /* 视频下沿淡入页面底色，去掉硬切边 */
+    .page-bg::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 28%;
+      min-height: 120px;
+      background: linear-gradient(
+        to bottom,
+        rgba(241, 240, 238, 0) 0%,
+        rgba(241, 240, 238, 0.25) 28%,
+        rgba(241, 240, 238, 0.65) 62%,
+        var(--bg-color) 100%
+      );
+    }
+
     /* ── 顶部内容：标题 + 九宫格（叠在背景视频上） ── */
     .top-block {
       position: relative;
@@ -61,13 +79,33 @@
       margin: 0 auto 24px;
     }
 
-    /* ── 主内容区 ── */
+    /* ── 主内容区：略上移压住视频，顶部再叠一层过渡 ── */
     .content {
       position: relative;
       z-index: 1;
-      background: transparent;
-      padding: 20px 16px 32px;
+      margin-top: -72px;
+      padding: 88px 16px 32px;
       padding-bottom: calc(32px + env(safe-area-inset-bottom));
+      background: transparent;
+    }
+
+    .content::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      z-index: -1;
+      width: 100vw;
+      transform: translateX(-50%);
+      pointer-events: none;
+      background: linear-gradient(
+        to bottom,
+        rgba(241, 240, 238, 0) 0%,
+        rgba(241, 240, 238, 0.4) 48px,
+        var(--bg-color) 96px,
+        var(--bg-color) 100%
+      );
     }
 
     /* ── 九宫格按钮 ── */
@@ -251,7 +289,6 @@
       z-index: 1;
       column-count: 2;
       column-gap: 10px;
-      background: var(--bg-color);
     }
 
     .wf-card {
@@ -337,7 +374,6 @@
       padding: 16px 0 8px;
       font-size: 13px;
       color: #aaa;
-      background: var(--bg-color);
     }
 
     .load-status.is-end {
