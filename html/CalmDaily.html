@@ -471,7 +471,10 @@
   </div>
 
   <script>
-    /* ── 配置区（后续在此接入直播 & 专栏接口） ── */
+    /* ── 配置区：默认兜底，运行时从后台 API 覆盖 ── */
+
+    var CONFIG_API = "../php/api/config.php";
+    var SHOW_ARTICLE_TIME = false;
 
     var NAV_BUTTONS = [
       { img: "assets/gaishanshimian.png",  alt: "改善睡眠", jump: { forwardType: "54", contId: "5" } },
@@ -513,6 +516,35 @@
 
     var PAGE_SIZE = 10;
     var GUEST_TOKEN = "Ecmmu18epJdP89fIlvX";
+
+    function loadAppConfig() {
+      return fetch(CONFIG_API, { credentials: "same-origin" })
+        .then(function (res) {
+          if (!res.ok) throw new Error("config http " + res.status);
+          return res.json();
+        })
+        .then(function (cfg) {
+          if (!cfg || typeof cfg !== "object") return;
+          if (cfg.navButtons && cfg.navButtons.length) NAV_BUTTONS = cfg.navButtons;
+          if (cfg.live) {
+            LIVE_CONFIG.enabled = !!cfg.live.enabled;
+            if (cfg.live.contId) LIVE_CONFIG.contId = String(cfg.live.contId);
+            if (cfg.live.forwardType) LIVE_CONFIG.forwardType = String(cfg.live.forwardType);
+            if (cfg.live.streamUrl) LIVE_CONFIG.streamUrl = cfg.live.streamUrl;
+            if (cfg.live.title) LIVE_CONFIG.title = cfg.live.title;
+            if (cfg.live.poster) LIVE_CONFIG.poster = cfg.live.poster;
+          }
+          if (cfg.waterfall) {
+            SHOW_ARTICLE_TIME = !!cfg.waterfall.showTime;
+            if (cfg.waterfall.contIds && cfg.waterfall.contIds.length) {
+              SPECIAL_CONFIG.contIds = cfg.waterfall.contIds;
+            }
+          }
+        })
+        .catch(function (err) {
+          console.warn("读取后台配置失败，使用内置默认值。", err);
+        });
+    }
 
     /* ── App 跳转桥（与 index.html 一致） ── */
 
@@ -865,6 +897,9 @@
         mediaHtml +
         '<div class="wf-card-body">' +
           '<p class="wf-card-title">' + escapeHtml(item.title) + "</p>" +
+          (SHOW_ARTICLE_TIME && item.publishTime
+            ? '<p class="wf-card-time">' + escapeHtml(formatPublishTime(item.publishTime)) + "</p>"
+            : "") +
         "</div>";
 
       card.addEventListener("click", function () {
@@ -878,6 +913,12 @@
       var div = document.createElement("div");
       div.textContent = str;
       return div.innerHTML;
+    }
+
+    function formatPublishTime(str) {
+      var value = String(str || "").trim();
+      if (!value) return "";
+      return value.length > 16 ? value.substring(0, 16) : value;
     }
 
     function loadMoreArticles() {
@@ -936,9 +977,11 @@
     }
 
     /* ── 启动 ── */
-    renderNav();
-    initLive();
-    initWaterfall();
+    loadAppConfig().then(function () {
+      renderNav();
+      initLive();
+      initWaterfall();
+    });
   </script>
 </body>
 </html>
