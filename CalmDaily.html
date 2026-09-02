@@ -216,13 +216,16 @@
       position: relative;
       z-index: 1;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 6px;
+      row-gap: 4px;
       margin-top: 10px;
       padding: 0 2px;
     }
 
     .live-badge {
+      order: 1;
       position: relative;
       width: 52px;
       height: 18px;
@@ -250,24 +253,24 @@
     }
 
     .live-title {
-      flex: 1;
+      order: 3;
+      flex: 1 1 100%;
       min-width: 0;
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 500;
       color: #222;
-      line-height: 1.4;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      line-height: 1.45;
+      white-space: normal;
       cursor: pointer;
     }
 
     .live-enter {
+      order: 2;
       flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-left: 4px;
+      margin-left: auto;
       border: 0;
       padding: 4px 2px 4px 8px;
       background: none;
